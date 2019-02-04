@@ -9,7 +9,7 @@ import (
 )
 
 func main() {
-	ratings, err := cf.RatingsFromCSV("data/bf-training-data.csv")
+	ratings, err := cf.RatingsFromCSV("data/fixture.csv")
 	if err != nil {
 		log.Fatalf("unable to load csv: %v", err)
 	}
