@@ -9,7 +9,7 @@ import (
 )
 
 func main() {
-	ratings, err := cf.RatingsFromCSV("data/fixture.csv")
+	ratings, err := cf.RatingsFromCSV("data/bf-training-data.csv")
 	if err != nil {
 		log.Fatalf("unable to load csv: %v", err)
 	}
@@ -23,7 +23,7 @@ func main() {
 			return
 		}
 
-		topK, err := graph.UserTopK(user, 5)
+		topK, err := graph.UserTopK(user, 20)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -38,6 +38,8 @@ func main() {
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
 
+// raintsToRecString produces a JSON recommendation string in the format which
+// satisfies the Recsys interface at BuzzFeed
 func ratingsToRecString(ratings cf.Ratings) string {
 	recString := ""
 	numRatings := len(ratings)

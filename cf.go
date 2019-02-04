@@ -128,6 +128,9 @@ func (cf *GraphCF) UserTopK(user string, k int) (Ratings, error) {
 
 // histBreadthFirstSearch will return a histogram of Indentifiers
 // to their exponentially decreasing inverse difference
+//
+// This is currently an unbound traversal, limits could be placed
+// to prevent it from walking each node
 func (cf *GraphCF) histBreadthFirst(node *Node) map[string]float64 {
 	seen := make(map[*Node]struct{})
 	hist := make(map[string]float64)
