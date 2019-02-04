@@ -3,43 +3,52 @@ package cf
 import (
 	"container/list"
 	"errors"
-	"log"
 	"sort"
 )
 
+// Rating represents a user -> item mapping with a float rating
 type Rating struct {
 	User   string
 	Item   string
-	Rating int
+	Rating float64
 }
 
+// Ratings represents a set of rating triples
 type Ratings []Rating
 
+// By default we will sort by Rating
 func (r Ratings) Len() int           { return len(r) }
 func (r Ratings) Swap(i, j int)      { r[i], r[j] = r[j], r[i] }
 func (r Ratings) Less(i, j int) bool { return r[i].Rating < r[j].Rating }
 
-type GraphCF struct {
-	userToNode map[string]*Node
-	itemToNode map[string]*Node
-}
-
-type Node struct {
-	Type       nodeType
-	Identifier string
-	edges      []*Node
-}
-
-func (n *Node) AddEdge(child *Node) {
-	n.edges = append(n.edges, child)
-}
-
+// nodeType is a bitwise flag which specifies if the node is
+// either for a user or item. It is bitwise because there are
+// alternatives to try out later with various latent features
 type nodeType uint8
 
 const (
 	nodeTypeUser nodeType = 1 << iota
 	nodeTypeItem
 )
+
+// Node is a graph node which can be an item or a user
+type Node struct {
+	Type       nodeType
+	Identifier string
+	edges      []*Node
+}
+
+// AddEdge adds an edge from this to another node
+func (n *Node) AddEdge(child *Node) {
+	n.edges = append(n.edges, child)
+}
+
+// GraphCF wraps the primary model. Links to the nodes are
+// referenced through the two maps
+type GraphCF struct {
+	userToNode map[string]*Node
+	itemToNode map[string]*Node
+}
 
 func NewSimpleGraphCF() *GraphCF {
 	return &GraphCF{
@@ -51,7 +60,7 @@ func NewSimpleGraphCF() *GraphCF {
 func (cf *GraphCF) AddRatings(ratings Ratings) {
 	for _, r := range ratings {
 		// don't store 0 ratings
-		if r.Rating <= 0 {
+		if r.Rating <= 0. {
 			continue
 		}
 
@@ -85,14 +94,16 @@ func (cf *GraphCF) AddRatings(ratings Ratings) {
 	}
 }
 
+// UserTopK will, given a user's identifier, pull the top K
+// ratings (up to that number), it excludes observed ratings
 func (cf *GraphCF) UserTopK(user string, k int) (Ratings, error) {
 	root, ok := cf.userToNode[user]
 	if !ok {
 		return Ratings{}, errors.New("user does not exist in graph")
 	}
 
+	// compute histogram of items and their scores
 	hist := cf.histBreadthFirst(root)
-	log.Println(hist)
 
 	// delete observed entries
 	for _, child := range root.edges {
@@ -115,41 +126,37 @@ func (cf *GraphCF) UserTopK(user string, k int) (Ratings, error) {
 	return ratings[:k], nil
 }
 
-func (cf *GraphCF) histBreadthFirst(node *Node) map[string]int {
-	maxVisits := 5
-	seen := make(map[*Node]int)
-	hist := make(map[string]int)
+// histBreadthFirstSearch will return a histogram of Indentifiers
+// to their exponentially decreasing inverse difference
+func (cf *GraphCF) histBreadthFirst(node *Node) map[string]float64 {
+	seen := make(map[*Node]struct{})
+	hist := make(map[string]float64)
 
 	queue := list.New()
 	queue.PushBack(node)
+	generation := nodeTypeUser
+	depth := 1.
 
 	for queue.Len() > 0 {
 		node = queue.Remove(queue.Front()).(*Node)
 
-		// if it's an already visited user node then skip
-		if (node.Type & nodeTypeUser) > 0 {
-			if _, ok := seen[node]; ok {
-				continue
-			} else {
-				seen[node] = 1
-			}
-		}
-		// if it's an item that has been visited more than the
-		// maximum number of times then skip
-		if (node.Type & nodeTypeItem) > 0 {
-			if visitCount, _ := seen[node]; visitCount >= maxVisits {
-				continue
-			} else {
-				seen[node] = visitCount + 1
-			}
+		if (node.Type & generation) == 0 {
+			generation = node.Type
+			depth /= 2
 		}
 
-		prefix := ""
 		if (node.Type & nodeTypeItem) > 0 {
-			prefix = "-"
+			if _, ok := hist[node.Identifier]; !ok {
+				hist[node.Identifier] = 0
+			}
+			hist[node.Identifier] += depth
 		}
 
-		log.Println(prefix + node.Identifier)
+		// if it's an already visited node then skip
+		if _, ok := seen[node]; ok {
+			continue
+		}
+		seen[node] = struct{}{}
 
 		// queue up children, we'll take care of seen and not in
 		// this bit
@@ -157,21 +164,7 @@ func (cf *GraphCF) histBreadthFirst(node *Node) map[string]int {
 			// queue
 			queue.PushBack(child)
 		}
-
-		if (node.Type & nodeTypeItem) > 0 {
-			if _, ok := hist[node.Identifier]; !ok {
-				hist[node.Identifier] = 0
-			}
-			hist[node.Identifier] += 1
-		}
 	}
 
 	return hist
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }
